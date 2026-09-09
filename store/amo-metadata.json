@@ -1,0 +1,12 @@
+{
+  "categories": { "firefox": ["social-communication", "privacy-security"] },
+  "summary": { "en-US": "See which posts a real human, verified by ZOREAL, vouched for, and sign what you write. Works on any site. No account in the browser." },
+  "homepage": { "en-US": "https://zoreal.com/product/mark" },
+  "support_url": { "en-US": "https://github.com/Bynn-Intelligence/zoreal-mark-firefox/issues" },
+  "is_experimental": false,
+  "tags": ["verified human", "signature", "provenance", "authenticity"],
+  "version": {
+    "license": "MIT",
+    "approval_notes": "No account or credentials are needed. Verification runs on any page that carries a ZOREAL Mark: the README at https://github.com/Bynn-Intelligence/zoreal-mark-firefox contains example Marks that render each verdict once the extension is installed. Signing requires the ZOREAL ID app on a phone and is not needed to review verification. The extension loads no remote code. The source archive rebuilds the package with Node 22 or later: npm ci, npm run build. The privacy notice at https://zoreal.com/privacy/mark-extension describes the two requests the extension makes."
+  }
+}

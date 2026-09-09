@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+      - 'store/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Fetch git dependencies over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+      - run: npm ci
+      # The lockfile is written on a Mac and carries only that platform's native
+      # binding for the bundler; npm does not add another platform's on its own
+      # (npm/cli#4828). The runner's binding is added here, at the locked
+      # bundler version.
+      - run: |
+          npm install --no-save --no-audit --no-fund \
+            "@rolldown/binding-linux-x64-gnu@$(node -p "JSON.parse(require('fs').readFileSync('node_modules/rolldown/package.json','utf8')).version")" \
+            "lightningcss-linux-x64-gnu@$(node -p "JSON.parse(require('fs').readFileSync('node_modules/lightningcss/package.json','utf8')).version")"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run lint
+      - run: npm run pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: release/*.zip

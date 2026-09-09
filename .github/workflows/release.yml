@@ -1,0 +1,115 @@
+# Releases.
+#
+# Every push to main that touches the code is a release: the patch version is
+# bumped in package.json (which the manifest reads), committed, tagged
+# v<version>, built, checked, packed, published as a GitHub release with the
+# zip for reviewers and temporary installs, and, when the store secrets are
+# set, submitted to addons.mozilla.org with its source archive and published
+# after review. Users receive it on Firefox's next update check without doing
+# anything.
+#
+# Two other ways in: run the workflow by hand with a level of minor or major
+# for a bigger bump; or push a tag v<version> yourself, which skips the bump
+# and must match the manifest version.
+#
+# A push that only touches documentation or the store listing is not a
+# release. The bump commit is pushed with the workflow's own token, which does
+# not start workflows, so a release cannot trigger another.
+#
+# Secrets (repository settings):
+#   AMO_JWT_ISSUER     the API key (JWT issuer) from addons.mozilla.org, under the
+#   AMO_JWT_SECRET     publisher account, and its secret
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore:
+      - '**.md'
+      - 'store/**'
+      - 'dev/screens/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+    inputs:
+      level:
+        description: Version bump
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Fetch git dependencies over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+      - run: npm ci
+      # The lockfile is written on a Mac and carries only that platform's native
+      # binding for the bundler; npm does not add another platform's on its own
+      # (npm/cli#4828). The runner's binding is added here, at the locked
+      # bundler version.
+      - run: |
+          npm install --no-save --no-audit --no-fund \
+            "@rolldown/binding-linux-x64-gnu@$(node -p "JSON.parse(require('fs').readFileSync('node_modules/rolldown/package.json','utf8')).version")" \
+            "lightningcss-linux-x64-gnu@$(node -p "JSON.parse(require('fs').readFileSync('node_modules/lightningcss/package.json','utf8')).version")"
+      - name: Bump the version, commit and tag
+        # A branch push bumps the patch level; a run by hand bumps the level
+        # chosen; a tag push is already the version and bumps nothing.
+        if: "!startsWith(github.ref, 'refs/tags/') && !startsWith(github.event.head_commit.message, 'Release v')"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "${{ github.event_name == 'workflow_dispatch' && inputs.level || 'patch' }}" -m "Release v%s"
+          git push --follow-tags origin HEAD:main
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: The tag names the manifest version
+        id: version
+        run: |
+          v=$(node -p "require('./dist/manifest.json').version")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "v$v" != "${GITHUB_REF_NAME}" ]; then echo "tag ${GITHUB_REF_NAME} but manifest version $v"; exit 1; fi
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+      - run: npm run lint
+      - run: npm run pack
+      - name: GitHub release with the package, for manual installs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: release/*.zip
+          generate_release_notes: true
+          body: |
+            Firefox installs release builds from addons.mozilla.org only. To try this
+            build without the store: open about:debugging, choose "This Firefox", then
+            "Load Temporary Add-on" and pick the zip. It stays until Firefox restarts.
+            The source zip is what Mozilla's reviewers build from.
+      - name: Are the addons.mozilla.org secrets set
+        id: amo
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+        run: echo "present=$([ -n "$AMO_JWT_ISSUER" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Submit to addons.mozilla.org
+        # Uploads the package and the source archive to the listed channel and
+        # returns without waiting for review; the version publishes when
+        # Mozilla's review passes.
+        if: steps.amo.outputs.present == 'true'
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          npx web-ext sign --channel listed --source-dir dist --artifacts-dir release/signed \
+            --amo-metadata store/amo-metadata.json \
+            --upload-source-code release/zoreal-mark-firefox-${{ steps.version.outputs.version }}-source.zip \
+            --approval-timeout 0
