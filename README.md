@@ -62,9 +62,8 @@ trusted.
 The Firefox build of the extension that runs in Chrome: the same source, the same
 verifier, with the manifest and the build changed where Firefox differs. Fifty-two
 conformance cases render their expected verdicts in a real Firefox on every build, and
-`web-ext lint` passes with no errors. Not yet: the addons.mozilla.org listing, the
-production record service keys, and the verifier package on npm. This section is kept
-true.
+`web-ext lint` passes with no errors. The verifier it embeds is `@zoreal/mark-verify` from npm. Not yet: the addons.mozilla.org
+listing and the production record service keys. This section is kept true.
 
 ## What a Mark asserts
 
@@ -240,8 +239,6 @@ the screenshots.
 The build is reproducible from this repository alone: Node 22 or later, `npm ci`,
 `npm run build`. That is what Mozilla's reviewers do with the source archive each
 release carries, and the result must match the package byte for byte.
-
-Until `@zoreal/mark-verify` is on npm, link it from a local checkout with `npm link`.
 
 ### Releasing
 
